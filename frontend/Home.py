@@ -16,7 +16,7 @@ def main():
 
 # Page configuration
 st.set_page_config(
-    page_title="HyGiah",
+    page_title="L2B",
     page_icon="💙",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -35,6 +35,13 @@ st.markdown(
         font-size: 20px !important;
         line-height: 1.6 !important;
     }
+    /* Sidebar background pattern */
+    [data-testid="stSidebar"] {background-color: #491778;
+    opacity: 0.8;
+    background-image: radial-gradient( ellipse farthest-corner at 10px 10px , #a52828, #a52828 50%, #491778 50%);
+    background-size: 10px 10px;
+    }
+
     """,
     unsafe_allow_html=True
 )

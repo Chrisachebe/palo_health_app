@@ -2,6 +2,29 @@ import streamlit as st
 import requests
 import pandas as pd
 
+# Styling
+st.markdown(
+    """
+    <style>
+    /* Apply rounded corners to all images */
+    img {
+        border-radius: 40px;   /* Adjust radius here */
+        border: 4px solid white;   /* Border thickness and color */
+    }
+    div[data-testid="stMarkdownContainer"] {
+        font-size: 20px !important;
+        line-height: 1.6 !important;
+    }
+    /* Sidebar background pattern */
+    [data-testid="stSidebar"] {background-color: #491778;
+    opacity: 0.8;
+    background-image: radial-gradient( ellipse farthest-corner at 10px 10px , #a52828, #a52828 50%, #491778 50%);
+    background-size: 10px 10px;
+    }
+
+    """,
+    unsafe_allow_html=True
+)
 
 st.title("Cumulative Health📊 ")
 

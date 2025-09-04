@@ -3,7 +3,7 @@ from flask import Flask, jsonify, request
 import mysql.connector
 from openai import OpenAI
 from dotenv import load_dotenv
-
+import traceback
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Load environment variables
@@ -123,76 +123,105 @@ def get_patient():
     })
 
 # Gets AI insights based on input data
-@app.route("/api/insights", methods=["Get", "POST"])
+@app.route("/api/insights", methods=["GET", "POST"])
 def get_insights():
-# Get JSON body for POST
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        date_filter = data.get("date")
-        year_filter = data.get("year")
-    # Get query params for GET
-    else:
-        date_filter = request.args.get("date")
-        year_filter = request.args.get("year")
-
-    if not date_filter and not year_filter:
-        return jsonify({"insight": "Awaiting date selection."}), 200
-
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        # ---------------------------
+        # Extract filters
+        # ---------------------------
+        date_filter = None
+        year_filter = None
 
-        if date_filter:
-            query = """
-                SELECT g.Date, g.name, g.`Calories spent (Kcal)`, g.`Weight (lbs)`,
-                       g.`Average heart rate (bpm)`, g.`Inactive duration (hrs)`,
-                       g.`Walking Duration (hrs)`, m.`food eaten`, m.`calorie total`,
-                       m.`carb(g)`, m.`fat(g)`, m.`protein(g)`, w.`Bench Max(lbs)`,
-                       w.`Squat Max(lbs)`, w.`Deadlift Max(lbs)`, w.`Leg Press (lbs)`
-                FROM googlefit g
-                INNER JOIN myfitnesspal m ON g.Date = m.Date
-                INNER JOIN weight_lifts w ON g.Date = w.Date
-                WHERE g.Date = %s
-            """
-            cursor.execute(query, (date_filter,))
-        elif year_filter:
-            query = """
-                SELECT g.Date, g.name, g.`Calories spent (Kcal)`, g.`Weight (lbs)`,
-                       g.`Average heart rate (bpm)`, g.`Inactive duration (hrs)`,
-                       g.`Walking Duration (hrs)`, m.`food eaten`, m.`calorie total`,
-                       m.`carb(g)`, m.`fat(g)`, m.`protein(g)`, w.`Bench Max(lbs)`,
-                       w.`Squat Max(lbs)`, w.`Deadlift Max(lbs)`, w.`Leg Press (lbs)`
-                FROM googlefit g
-                INNER JOIN myfitnesspal m ON g.Date = m.Date
-                INNER JOIN weight_lifts w ON g.Date = w.Date
-                WHERE YEAR(g.Date) = %s
-            """
-            cursor.execute(query, (year_filter,))
+        if request.method == "POST":
+            data = request.get_json(silent=True) or {}
+            date_filter = data.get("date")
+            year_filter = data.get("year")
+        else:  # GET
+            date_filter = request.args.get("date")
+            year_filter = request.args.get("year")
 
-        rows = cursor.fetchall()
-        conn.close()
+        if not date_filter and not year_filter:
+            return jsonify({"insight": "Awaiting date or year selection."}), 200
 
-        if not rows:
-            return jsonify({"insight": f"No data found for the selected date/year."}), 200
+        # ---------------------------
+        # Query MySQL
+        # ---------------------------
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
 
-        # Send the data to OpenAI
-        prompt = f"""Patient data: {rows}. Start Message with 'Warning: I am not a Doctor' Then Provide health insights.
-        Don't Return numeric data inside insight. Make insight 200 tokens or less """
+            if date_filter:
+                query = """
+                    SELECT g.Date, g.name, g.`Calories spent (Kcal)`, g.`Weight (lbs)`,
+                           g.`Average heart rate (bpm)`, g.`Inactive duration (hrs)`,
+                           g.`Walking Duration (hrs)`, m.`food eaten`, m.`calorie total`,
+                           m.`carb(g)`, m.`fat(g)`, m.`protein(g)`, w.`Bench Max(lbs)`,
+                           w.`Squat Max(lbs)`, w.`Deadlift Max(lbs)`, w.`Leg Press (lbs)`
+                    FROM googlefit g
+                    INNER JOIN myfitnesspal m ON g.Date = m.Date
+                    INNER JOIN weight_lifts w ON g.Date = w.Date
+                    WHERE g.Date = %s
+                    LIMIT 1
+                """
+                cursor.execute(query, (date_filter,))
 
-        completion = client.chat.completions.create(
-            model="gpt-4.1",
-            messages=[
-                {"role": "system", "content": "You are a health assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=200
-        )
+            elif year_filter:
+                query = """
+                    SELECT g.Date, g.name, g.`Calories spent (Kcal)`, g.`Weight (lbs)`,
+                           g.`Average heart rate (bpm)`, g.`Inactive duration (hrs)`,
+                           g.`Walking Duration (hrs)`, m.`food eaten`, m.`calorie total`,
+                           m.`carb(g)`, m.`fat(g)`, m.`protein(g)`, w.`Bench Max(lbs)`,
+                           w.`Squat Max(lbs)`, w.`Deadlift Max(lbs)`, w.`Leg Press (lbs)`
+                    FROM googlefit g
+                    INNER JOIN myfitnesspal m ON g.Date = m.Date
+                    INNER JOIN weight_lifts w ON g.Date = w.Date
+                    WHERE YEAR(g.Date) = %s
+                    ORDER BY g.Date ASC
+                    LIMIT 10
+                """
+                cursor.execute(query, (year_filter,))
 
-        insight_text = completion.choices[0].message.content
-        return jsonify({"insight": insight_text}), 200
+            rows = cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+            if not rows:
+                return jsonify({"insight": "No data found for the selected date/year."}), 200
+
+        except Exception as db_error:
+            print("Database error:", traceback.format_exc())
+            return jsonify({"error": "Database error. Please try again later."}), 500
+
+        # ---------------------------
+        # Call OpenAI
+        # ---------------------------
+        try:
+            prompt = f"""Patient data: {rows}. Start message with 'Warning: I am not a Doctor.' 
+            Provide health insights. Keep insight concise and under 200 tokens. 
+            Do not return raw numbers in the insight."""
+
+            completion = client.chat.completions.create(
+                model="gpt-4.1",
+                messages=[
+                    {"role": "system", "content": "You are a health assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200
+            )
+
+            insight_text = completion.choices[0].message.content
+            return jsonify({"insight": insight_text}), 200
+
+        except Exception as ai_error:
+            print("AI error:", traceback.format_exc())
+            return jsonify({
+                "insight": "Unable to generate AI insights at this time.",
+                "patient_data": rows
+            }), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-        
+        print("Unexpected error in /api/insights:", traceback.format_exc())
+        return jsonify({"error": "Internal server error. Please try again later."}), 500
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

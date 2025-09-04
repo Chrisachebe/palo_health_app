@@ -29,7 +29,7 @@ def get_db_connection():
 # Home page to display
 @app.route("/")
 def home():
-    return jsonify({"message": "Welcome to the Health App Backend!"})
+    return jsonify({"message": "Data Accessible!"})
 
 # Gets Patient Data
 @app.route("/api/patients", methods=["GET"])
@@ -37,7 +37,6 @@ def get_patient():
     # Get Date Filter
     date_filter = request.args.get("date")  # e.g., '2025-09-01'
 
-    # Returning Queries
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -69,48 +68,59 @@ def get_patient():
                     ON g.Date = w.Date
                 WHERE g.Date = %s
                 '''
-        
         cursor.execute(query, (date_filter,))
+        patients = cursor.fetchall()
 
     else:
-        # regular return of data
+        # Default: return recent records
         cursor.execute('''
-                        SELECT 
-                        g.Date,
-                        g.name,
-                        g.age,
-                        g.`Calories spent (Kcal)`,
-                        g.`Weight (lbs)`,
-                        g.`Average heart rate (bpm)`,
-                        g.`Inactive duration (hrs)`,
-                        g.`Walking Duration (hrs)`,
-                        m.`food eaten`,
-                        m.`calorie total`,
-                        m.`carb(g)`,
-                        m.`fat(g)`,
-                        m.`protein(g)`,
-                        w.`Bench Max(lbs)`,
-                        w.`Squat Max(lbs)`,
-                        w.`Deadlift Max(lbs)`,
-                        w.`Leg Press (lbs)`
-                        
-                    FROM googlefit g
+            SELECT 
+                g.Date,
+                g.name,
+                g.age,
+                g.`Calories spent (Kcal)`,
+                g.`Weight (lbs)`,
+                g.`Average heart rate (bpm)`,
+                g.`Inactive duration (hrs)`,
+                g.`Walking Duration (hrs)`,
+                m.`food eaten`,
+                m.`calorie total`,
+                m.`carb(g)`,
+                m.`fat(g)`,
+                m.`protein(g)`,
+                w.`Bench Max(lbs)`,
+                w.`Squat Max(lbs)`,
+                w.`Deadlift Max(lbs)`,
+                w.`Leg Press (lbs)`
+            FROM googlefit g
+            INNER JOIN myfitnesspal m
+                ON g.Date = m.Date
+            INNER JOIN weight_lifts w
+                ON g.Date = w.Date
+            ORDER BY g.Date
+            LIMIT 10;
+        ''')
+        patients = cursor.fetchall()
 
-                    INNER JOIN myfitnesspal m
-                        ON g.Date = m.Date
-                    INNER JOIN weight_lifts w
-                        ON g.Date = w.Date
-
-                    ORDER BY g.Date
-                    LIMIT 10;
-                       ''')
-
-    patients = cursor.fetchall()
+    # --- Average weight per year query ---
+    cursor.execute('''
+        SELECT 
+            YEAR(g.Date) AS year,
+            AVG(g.`Weight (lbs)`) AS avg_weight
+        FROM googlefit g
+        GROUP BY YEAR(g.Date)
+        ORDER BY year;
+    ''')
+    avg_weights = cursor.fetchall()
 
     cursor.close()
     conn.close()
 
-    return jsonify(patients)
+    # Return both patient data + yearly averages
+    return jsonify({
+        "patients": patients,
+        "average_weights": avg_weights
+    })
 
 # Gets AI insights based on input data
 @app.route("/api/insights", methods=["Get", "POST"])

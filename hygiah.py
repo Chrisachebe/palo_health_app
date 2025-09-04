@@ -47,6 +47,7 @@ def get_patient():
                 SELECT
                     g.Date,
                     g.name,
+                    g.age,
                     g.`Calories spent (Kcal)`,
                     g.`Weight (lbs)`,
                     g.`Average heart rate (bpm)`,
@@ -77,6 +78,7 @@ def get_patient():
                         SELECT 
                         g.Date,
                         g.name,
+                        g.age,
                         g.`Calories spent (Kcal)`,
                         g.`Weight (lbs)`,
                         g.`Average heart rate (bpm)`,
@@ -111,32 +113,76 @@ def get_patient():
     return jsonify(patients)
 
 # Gets AI insights based on input data
-@app.route("/api/insights", methods=["GET", "POST"])
+@app.route("/api/insights", methods=["Get", "POST"])
 def get_insights():
-    if request.method == "GET":
-        return jsonify({"message": "Send a POST with patient data here."})
-    
-    elif request.method == "POST":
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"error": "No input data provided"}), 400
+# Get JSON body for POST
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        date_filter = data.get("date")
+        year_filter = data.get("year")
+    # Get query params for GET
+    else:
+        date_filter = request.args.get("date")
+        year_filter = request.args.get("year")
 
-        try:
-            prompt = f"Patient data: {data}. Provide health insights."
-            
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",  # or gpt-3.5-turbo if you prefer
-                messages=[
-                    {"role": "system", "content": "You are a health assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=200
-            )
-            
-            insight_text = completion.choices[0].message.content
-            return jsonify({"insight": insight_text}), 200
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+    if not date_filter and not year_filter:
+        return jsonify({"insight": "Awaiting date selection."}), 200
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        if date_filter:
+            query = """
+                SELECT g.Date, g.name, g.`Calories spent (Kcal)`, g.`Weight (lbs)`,
+                       g.`Average heart rate (bpm)`, g.`Inactive duration (hrs)`,
+                       g.`Walking Duration (hrs)`, m.`food eaten`, m.`calorie total`,
+                       m.`carb(g)`, m.`fat(g)`, m.`protein(g)`, w.`Bench Max(lbs)`,
+                       w.`Squat Max(lbs)`, w.`Deadlift Max(lbs)`, w.`Leg Press (lbs)`
+                FROM googlefit g
+                INNER JOIN myfitnesspal m ON g.Date = m.Date
+                INNER JOIN weight_lifts w ON g.Date = w.Date
+                WHERE g.Date = %s
+            """
+            cursor.execute(query, (date_filter,))
+        elif year_filter:
+            query = """
+                SELECT g.Date, g.name, g.`Calories spent (Kcal)`, g.`Weight (lbs)`,
+                       g.`Average heart rate (bpm)`, g.`Inactive duration (hrs)`,
+                       g.`Walking Duration (hrs)`, m.`food eaten`, m.`calorie total`,
+                       m.`carb(g)`, m.`fat(g)`, m.`protein(g)`, w.`Bench Max(lbs)`,
+                       w.`Squat Max(lbs)`, w.`Deadlift Max(lbs)`, w.`Leg Press (lbs)`
+                FROM googlefit g
+                INNER JOIN myfitnesspal m ON g.Date = m.Date
+                INNER JOIN weight_lifts w ON g.Date = w.Date
+                WHERE YEAR(g.Date) = %s
+            """
+            cursor.execute(query, (year_filter,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return jsonify({"insight": f"No data found for the selected date/year."}), 200
+
+        # Send the data to OpenAI
+        prompt = f"""Patient data: {rows}. Start Message with 'Warning: I am not a Doctor' Then Provide health insights.
+        Don't Return numeric data inside insight. Make insight 200 tokens or less """
+
+        completion = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[
+                {"role": "system", "content": "You are a health assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=200
+        )
+
+        insight_text = completion.choices[0].message.content
+        return jsonify({"insight": insight_text}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
         
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

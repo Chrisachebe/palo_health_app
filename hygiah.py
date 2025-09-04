@@ -1,7 +1,10 @@
 import os
 from flask import Flask, jsonify, request
 import mysql.connector
+from openai import OpenAI
 from dotenv import load_dotenv
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Load environment variables
 load_dotenv()
@@ -108,33 +111,32 @@ def get_patient():
     return jsonify(patients)
 
 # Gets AI insights based on input data
-@app.route("/api/insights", methods=["POST"])
+@app.route("/api/insights", methods=["GET", "POST"])
 def get_insights():
-    """
-    Example: Client sends patient data as JSON:
-    {
-        "id": 1,
-        "name": "Alice",
-        "age": 30,
-        "blood_pressure": 120,
-        "heart_rate": 75
-    }
-    """
-    data = request.get_json()
+    if request.method == "GET":
+        return jsonify({"message": "Send a POST with patient data here."})
+    
+    elif request.method == "POST":
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"error": "No input data provided"}), 400
 
-    if not data:
-        return jsonify({"error": "No input data provided"}), 400
-
-    # --- Dummy AI logic (replace with real model later) ---
-    insights = {
-        "patient": data.get("name", "Unknown"),
-        "age": data.get("age"),
-        "insight": "Patient's vitals look stable." 
-                   if data.get("blood_pressure", 0) < 130 
-                   else "Consider monitoring blood pressure closely."
-    }
-
-    return jsonify(insights)
-
+        try:
+            prompt = f"Patient data: {data}. Provide health insights."
+            
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini",  # or gpt-3.5-turbo if you prefer
+                messages=[
+                    {"role": "system", "content": "You are a health assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200
+            )
+            
+            insight_text = completion.choices[0].message.content
+            return jsonify({"insight": insight_text}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

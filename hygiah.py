@@ -59,7 +59,7 @@ def get_patient():
                     m.`protein(g)`,
                     w.`Bench Max(lbs)`,
                     w.`Squat Max(lbs)`,
-                    w.`Deadlit Max(lbs)`,
+                    w.`Deadlift Max(lbs)`,
                     w.`Leg Press (lbs)`
                 FROM googlefit g
                 INNER JOIN myfitnesspal m
@@ -89,7 +89,7 @@ def get_patient():
                         m.`protein(g)`,
                         w.`Bench Max(lbs)`,
                         w.`Squat Max(lbs)`,
-                        w.`Deadlit Max(lbs)`,
+                        w.`Deadlift Max(lbs)`,
                         w.`Leg Press (lbs)`
                         
                     FROM googlefit g
